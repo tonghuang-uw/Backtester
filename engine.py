@@ -1,7 +1,12 @@
 import pandas as pd
 from tqdm import tqdm
 import yfinance as yf
-class Engine:
+from Strategy import Strategy
+from order import Order
+from trade import Trade
+from list_strategy import BuyAndSellSwitch
+
+class Engine():
     """ The engine class is the main object to be used for backtest
     """
     def __init__(self, starting_account = 50000):
@@ -49,73 +54,7 @@ class Engine:
             self.cash -= t.price * t.size
         self.strategy.orders = []
 
-class Strategy:
-    """ The strategy class is the object to add strategy to the engine
-    """
-    def __init__(self):
-        self.current_idx = None
-        self.data = None
-        self.orders = []
-        self.trades = []
 
-    def buy(self, ticker, size = 1):
-        self.orders.append(
-            Order(
-                ticker = ticker,
-                side = 'buy',
-                size = size,
-                idx = self.current_idx
-            )
-        )
-    
-    def sell(self, ticker, size = 1):
-        self.orders.append(
-            Order(
-                ticker = ticker,
-                side = 'sell',
-                size = -size,
-                idx = self.current_idx
-            )
-        )
-    
-    
-    @property
-    def position_size(self):
-        return sum([t.size for t in self.trades])
-
-class Trade:
-    """ The trade object is created when a trade is created
-    """
-    def __init__(self, ticker, side, price, size, idx, type):
-        self.ticker = ticker
-        self.side = side
-        self.size = size
-        self.idx = idx
-        self.type = type
-        self.price = price
-    
-    def __repr__(self):
-        return f'<Trade: {self.idx} {self.ticker} {self.size} @ {self.price}'
-
-class Order:
-    """ Then a order is filled, we create a order object
-    """
-    def __init__(self, ticker, side, size, idx):
-        self.ticker = ticker
-        self.side = side
-        self.size = size
-        self.idx = idx
-        self.type = "market"
-
-class BuyAndSellSwitch(Strategy):
-    def on_bar(self):
-        if self.position_size == 0:
-            self.buy('AAPL', 1)
-            print(self.current_idx,"buy")
-        else:
-            self.sell('AAPL', 1)
-            print(self.position_size)
-            print(self.current_idx,"sell")
 
 strategy = BuyAndSellSwitch()
 data = yf.Ticker('AAPL').history(start='2020-01-01', end='2022-12-31', interval='1d')
