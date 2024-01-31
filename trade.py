@@ -9,5 +9,10 @@ class Trade():
         self.type = type
         self.price = price
     
+    def _get_trade(self):
+        # return index, side, size, price
+        return self.idx, self.side, self.size, self.price
+
     def __repr__(self):
-        return f'<Trade: {self.idx} {self.ticker} {self.size} @ {self.price}'
+        return f'<Trade: {self.idx} {self.side} {self.ticker} {self.size} @ {self.price}'
+
