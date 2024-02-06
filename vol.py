@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
+import yfinance as yf
 def robust_vol_cal(
     daily_returns: pd.Series,
     days: int = 35,
@@ -122,26 +122,66 @@ def simple_vol_cal(
 
     return vol
 
-  # For reproducibility
-# Generate 100 days of synthetic daily returns
+
+# For reproducibility
+# Generate the simple strategy for the volatility targeting
+# test 
+
+sp500 = yf.download('BTC-USD', start = "2021-05-01", interval= '1d')
+price = sp500['Adj Close']
+ret = price.pct_change().fillna(0)
+
 np.random.seed(100)
-daily_returns = pd.Series(np.random.normal(0, 0.025, 3000), index=pd.date_range(start='2015-01-01', periods=3000))
-price = (1 + daily_returns).cumprod()
+#daily_returns = pd.Series(np.random.normal(0, 0.025, 3000), index=pd.date_range(start='2015-01-01', periods=3000))
+#price = (1 + daily_returns).cumprod()
 
-vol = robust_vol_cal(daily_returns)
+vol = robust_vol_cal(price.pct_change())
 
-fast_ma = price.rolling(25, min_periods=10).mean()
-slow_ma = price.rolling(64, min_periods=10).mean()
+fast_ma = price.rolling(10, min_periods=10).mean()
+slow_ma = price.rolling(40, min_periods=10).mean()
 raw_ma = fast_ma - slow_ma
-forecast = (raw_ma/vol).clip(lower = -20, upper = 20)
+forecast = (raw_ma/vol).clip(lower = 0, upper = 20)
 
-plt.figure(figsize= (10,7))
-plt.subplot(3, 1, 1)
-daily_returns.plot(title = 'daily return')
+inital_cash = 20000
+pct_annual_volatility_target = 0.2
 
-plt.subplot(3, 1, 2)
-price.plot(title = 'price')
+cash_annual_vol_targ = inital_cash * pct_annual_volatility_target
+cash_daily_vol_targ = cash_annual_vol_targ / np.sqrt(252)
 
-plt.subplot(3, 1, 3)
-forecast.plot(title = 'vol')
+block_vol = price * vol
+
+# calculate the share needed for each day
+share_needed = cash_daily_vol_targ / block_vol
+cash_needed = share_needed * price
+
+daily_value_of_shares = share_needed.shift(1) * price
+
+
+
+
+#plt.plot(vol)
+#plt.plot(cash_daily_vol_targ/vol)
+#plt.show()
+
+fig, axs = plt.subplots(3, 1, figsize=(10, 7), sharex=True)  # Enable sharing x-axis
+
+# Plot daily return
+axs[0].plot(ret, label='Daily Return')
+axs[0].set_title('Daily Return')
+axs[0].legend(loc='best')
+
+# Plot price
+axs[1].plot(price, label='Price')
+axs[1].plot(forecast, 'g^', markersize = 1)
+axs[1].set_title('Price')
+axs[1].legend(loc='best')
+
+# Plot forecast
+axs[2].plot(forecast, label='Forecast')
+axs[2].set_title('Forecast')
+axs[2].legend(loc='best')
+
+# Improve layout and display the figure
+plt.grid()
+plt.tight_layout()
 plt.show()
