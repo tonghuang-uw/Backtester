@@ -49,15 +49,16 @@ def robust_vol_cal(
 
     :returns: pd.DataFrame -- volatility measure
     """
+
     # Standard deviation will be nan for first 10 non nan values
-    vol = simple_ewvol_cal(daily_returns, days=days, min_periods=min_periods)
-    vol = apply_min_floor(vol, vol_abs_min=vol_abs_min)
+    vol = simple_ewvol_calc(daily_returns, days=days, min_periods=min_periods)
+    vol = apply_min_vol(vol, vol_abs_min=vol_abs_min)
 
     if vol_floor:
         vol = apply_vol_floor(
             vol,
             floor_min_quant=floor_min_quant,
-            floor_min_period=floor_min_periods,
+            floor_min_periods=floor_min_periods,
             floor_days=floor_days,
         )
 
@@ -68,120 +69,122 @@ def robust_vol_cal(
     return vol
 
 
-def apply_min_floor(
-    vol: pd.Series,
-    vol_abs_min: float = 0.0000000001
-) -> pd.Series:
-    # return vol min if vol is smaller
-    vol[vol<vol_abs_min] = vol_abs_min
+def apply_min_vol(vol: pd.Series, vol_abs_min: float = 0.0000000001) -> pd.Series:
+    vol[vol < vol_abs_min] = vol_abs_min
 
     return vol
+
 
 def apply_vol_floor(
     vol: pd.Series,
     floor_min_quant: float = 0.05,
-    floor_min_period: int = 100,
+    floor_min_periods: int = 100,
     floor_days: int = 500,
 ) -> pd.Series:
-    # Find the minimum quantile to set as the minimum
-    vol_min = vol.rolling(min_periods=floor_min_period, window = floor_days).quantile(
-        q = floor_min_quant
+    # Find the rolling 5% quantile point to set as a minimum
+    vol_min = vol.rolling(min_periods=floor_min_periods, window=floor_days).quantile(
+        quantile=floor_min_quant
     )
-    return vol_min
+
+    # set this to zero for the first value then propagate forward, ensures
+    # we always have a value
+    vol_min.iloc[0] = 0.0
+    vol_min.ffill(inplace=True)
+
+    # apply the vol floor
+    vol_floored = np.maximum(vol, vol_min)
+
+    return vol_floored
 
 
 def backfill_vol(vol: pd.Series) -> pd.Series:
     # have to fill forwards first, as it's only the start we want to
     # backfill, eg before any value available
 
-    vol_forward_fill = vol.fillna(method = 'ffill')
-    vol_backward_fill = vol.fillna(method = 'bfill')
+    vol_forward_fill = vol.fillna(method="ffill")
+    vol_backfilled = vol_forward_fill.fillna(method="bfill")
 
-    return vol_backward_fill
+    return vol_backfilled
 
-def simple_ewvol_cal(
-    daily_return: pd.Series,
-    days: int = 25,
-    min_periods = 10
+
+def mixed_vol_calc(
+    daily_returns: pd.Series,
+    days: int = 35,
+    min_periods: int = 10,
+    slow_vol_years: int = 20,
+    proportion_of_slow_vol: float = 0.3,
+    vol_abs_min: float = 0.0000000001,
+    backfill: bool = False,
+    **ignored_kwargs,
 ) -> pd.Series:
+    """
+    Robust exponential volatility calculation, assuming daily series of prices
+    We apply an absolute minimum level of vol (absmin);
+    and a volfloor based on lowest vol over recent history
+
+    :param x: data
+    :type x: Tx1 pd.Series
+
+    :param days: Number of days in lookback (*default* 35)
+    :type days: int
+
+    :param min_periods: The minimum number of observations (*default* 10)
+    :type min_periods: int
+
+    :param vol_abs_min: The size of absolute minimum (*default* =0.0000000001)
+      0.0= not used
+    :type absmin: float or None
+
+    :param vol_floor Apply a floor to volatility (*default* True)
+    :type vol_floor: bool
+
+    :param floor_min_quant: The quantile to use for volatility floor (eg 0.05
+      means we use 5% vol) (*default 0.05)
+    :type floor_min_quant: float
+
+    :param floor_days: The lookback for calculating volatility floor, in days
+      (*default* 500)
+    :type floor_days: int
+
+    :param floor_min_periods: Minimum observations for floor - until reached
+      floor is zero (*default* 100)
+    :type floor_min_periods: int
+
+    :returns: pd.DataFrame -- volatility measure
+    """
 
     # Standard deviation will be nan for first 10 non nan values
-    vol = daily_return.ewm(adjust = True, span = days, min_periods = min_periods).std()
+    vol = simple_ewvol_calc(daily_returns, days=days, min_periods=min_periods)
+
+    slow_vol_days = slow_vol_years * BUSINESS_DAYS_IN_YEAR
+    long_vol = vol.ewm(slow_vol_days).mean()
+
+    vol = long_vol * proportion_of_slow_vol + vol * (1 - proportion_of_slow_vol)
+
+    vol = apply_min_vol(vol, vol_abs_min=vol_abs_min)
+
+    if backfill:
+        # use the first vol in the past, sort of cheating
+        vol = backfill_vol(vol)
 
     return vol
 
 
-def simple_vol_cal(
-    daily_return: pd.Series,
-    days: int = 25,
-    min_periods = 10
+def simple_ewvol_calc(
+    daily_returns: pd.Series, days: int = 35, min_periods: int = 10, **ignored_kwargs
 ) -> pd.Series:
 
     # Standard deviation will be nan for first 10 non nan values
-    vol = daily_return.rolling(days, min_periods = min_periods).std()
+    vol = daily_returns.ewm(adjust=True, span=days, min_periods=min_periods).std()
 
     return vol
 
 
-# For reproducibility
-# Generate the simple strategy for the volatility targeting
-# test 
+def simple_vol_calc(
+    daily_returns: pd.Series, days: int = 25, min_periods: int = 10, **ignored_kwargs
+) -> pd.Series:
 
-sp500 = yf.download('BTC-USD', start = "2021-05-01", interval= '1d')
-price = sp500['Adj Close']
-ret = price.pct_change().fillna(0)
+    # Standard deviation will be nan for first 10 non nan values
+    vol = daily_returns.rolling(days, min_periods=min_periods).std()
 
-np.random.seed(100)
-#daily_returns = pd.Series(np.random.normal(0, 0.025, 3000), index=pd.date_range(start='2015-01-01', periods=3000))
-#price = (1 + daily_returns).cumprod()
-
-vol = robust_vol_cal(price.pct_change())
-
-fast_ma = price.rolling(10, min_periods=10).mean()
-slow_ma = price.rolling(40, min_periods=10).mean()
-raw_ma = fast_ma - slow_ma
-forecast = (raw_ma/vol).clip(lower = 0, upper = 20)
-
-inital_cash = 20000
-pct_annual_volatility_target = 0.2
-
-cash_annual_vol_targ = inital_cash * pct_annual_volatility_target
-cash_daily_vol_targ = cash_annual_vol_targ / np.sqrt(252)
-
-block_vol = price * vol
-
-# calculate the share needed for each day
-share_needed = cash_daily_vol_targ / block_vol
-cash_needed = share_needed * price
-
-daily_value_of_shares = share_needed.shift(1) * price
-
-
-
-
-#plt.plot(vol)
-#plt.plot(cash_daily_vol_targ/vol)
-#plt.show()
-
-fig, axs = plt.subplots(3, 1, figsize=(10, 7), sharex=True)  # Enable sharing x-axis
-
-# Plot daily return
-axs[0].plot(ret, label='Daily Return')
-axs[0].set_title('Daily Return')
-axs[0].legend(loc='best')
-
-# Plot price
-axs[1].plot(price, label='Price')
-axs[1].plot(forecast, 'g^', markersize = 1)
-axs[1].set_title('Price')
-axs[1].legend(loc='best')
-
-# Plot forecast
-axs[2].plot(forecast, label='Forecast')
-axs[2].set_title('Forecast')
-axs[2].legend(loc='best')
-
-# Improve layout and display the figure
-plt.grid()
-plt.tight_layout()
-plt.show()
+    return vol

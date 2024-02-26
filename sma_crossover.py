@@ -4,7 +4,7 @@ from Strategy import Strategy
 
 class sma_crossover(Strategy):
 
-    def __init__(self, data, slow, fast):
+    def __init__(self, slow, fast):
         """
         slow: int, the slow moving average
         fast: int, the fast moving average
@@ -12,24 +12,20 @@ class sma_crossover(Strategy):
         super().__init__()
 
         # initiate ma data
-        self.ma_data = data
+        self.ma_data = self.data
 
         self.slow = slow
         self.fast = fast
-    
+
+        # automatically calculate the moving average
+        self.calculate_ma()
+
     def calculate_ma(self):
-        self.ma_data[f'sma_{self.slow}'] = self.ma_data['price'].rolling(self.slow).mean()
-        self.ma_data[f'sma_{self.fast}'] = self.ma_data['price'].rolling(self.fast).mean()
-    
-data = pd.DataFrame({
-    'price': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-})
-
-# Instantiate your class
-sma_test = sma_crossover(data=data, slow=3, fast=2)
-
-# Calculate moving averages
-sma_test.calculate_ma()
-
-# Verify the output
-print(sma_test.ma_data)
+        self.ma_data[f'sma_{self.slow}'] = self.ma_data['Close'].rolling(self.slow).mean()
+        self.ma_data[f'sma_{self.fast}'] = self.ma_data['Close'].rolling(self.fast).mean()
+    def on_bar(self):
+        fast_ma = self.ma_data.loc[self.current_idx][f'sma_{self.fast}']
+        slow_ma = self.ma_data.loc[self.current_idx][f'sna_{self.slow}']
+        
+        if self.position_size == 0:
+            

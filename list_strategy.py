@@ -11,3 +11,4 @@ class BuyAndSellSwitch(Strategy):
             self.sell('AAPL', 1)
             print(self.position_size)
             print(self.current_idx,"sell")
+            
